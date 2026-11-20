@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assistente</title>
+<style>
+  :root {
+    --bg: #04070c;
+    --panel: rgba(12, 20, 32, 0.72);
+    --line: rgba(120, 200, 255, 0.14);
+    --text: #dbe8f5;
+    --muted: #7d93a8;
+    --accent: #4fd1ff;
+    --user: rgba(79, 209, 255, 0.12);
+    --danger: #ff7a7a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(ellipse at 35% 45%, #0a1726 0%, var(--bg) 60%);
+    color: var(--text);
+    font: 15px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  .app { display: grid; grid-template-columns: 1fr minmax(340px, 440px); height: 100vh; }
+
+  /* ---------- esfera ---------- */
+  .stage { position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  #orb { width: 100%; height: 100%; display: block; cursor: pointer; }
+  .brand {
+    position: absolute; top: 24px; left: 28px;
+    font-weight: 600; letter-spacing: 0.42em; font-size: 13px; color: var(--accent); opacity: 0.85;
+  }
+  .state {
+    position: absolute; bottom: 9vh; left: 0; right: 0; text-align: center;
+    color: var(--muted); font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase;
+    transition: color .3s;
+  }
+  .hint { position: absolute; bottom: calc(9vh - 24px); left: 0; right: 0; text-align: center; color: #4d6175; font-size: 12px; }
+
+  /* ---------- painel do chat ---------- */
+  .panel {
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--panel); border-left: 1px solid var(--line);
+    backdrop-filter: blur(14px);
+  }
+  .panel header {
+    display: flex; align-items: center; gap: 8px; padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .panel header h1 { font-size: 14px; font-weight: 600; margin: 0 auto 0 0; letter-spacing: 0.04em; }
+  .icon-btn, select {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 8px; height: 32px; padding: 0 10px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .icon-btn:hover, select:hover { color: var(--text); border-color: rgba(120,200,255,.35); }
+  .icon-btn.off { opacity: .5; }
+  select { max-width: 150px; }
+  select option { background: #0c1420; }
+
+  .log { flex: 1; overflow-y: auto; padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { max-width: 92%; word-wrap: break-word; }
+  .msg.user { align-self: flex-end; background: var(--user); border: 1px solid rgba(79,209,255,.2); padding: 9px 13px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
+  .msg.bot { align-self: flex-start; }
+  .msg.bot.pending { display: none; }
+  .msg.bot .text:empty { display: none; }
+  .msg.system { align-self: center; color: var(--muted); font-size: 13px; text-align: center; max-width: 100%; }
+  .msg.system.error { color: var(--danger); }
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .tool { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool b { color: var(--accent); font-weight: 500; }
+  .text code { background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+  .text pre { background: #070c14; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+  .text pre code { background: none; padding: 0; }
+  .text a { color: var(--accent); }
+
+  .composer { display: flex; gap: 8px; align-items: flex-end; padding: 12px; border-top: 1px solid var(--line); }
+  .composer textarea {
+    flex: 1; resize: none; max-height: 140px; min-height: 42px;
+    background: rgba(255,255,255,.04); color: var(--text); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 12px; font: inherit; outline: none;
+  }
+  .composer textarea:focus { border-color: rgba(79,209,255,.45); }
+  .round {
+    width: 42px; height: 42px; flex: none; border-radius: 50%; border: 1px solid var(--line);
+    background: rgba(255,255,255,.04); color: var(--text); cursor: pointer; display: grid; place-items: center;
+  }
+  .round:hover { border-color: rgba(79,209,255,.45); }
+  .round.on { background: rgba(70, 230, 160, .18); border-color: #46e6a0; color: #46e6a0; }
+  .round.primary { background: var(--accent); color: #03121c; border: none; }
+  .round.stop { background: var(--danger); color: #1a0505; border: none; }
+  .round svg { width: 18px; height: 18px; }
+
+  @media (max-width: 860px) {
+    body { overflow: auto; }
+    .app { grid-template-columns: 1fr; grid-template-rows: 42vh 1fr; }
+    .panel { border-left: none; border-top: 1px solid var(--line); min-height: 58vh; }
+    .state { bottom: 18px; } .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="stage">
+    <div class="brand" id="brand"></div>
+    <canvas id="orb" title="Clique para falar"></canvas>
+    <div class="state" id="stateLabel">Em espera</div>
+    <div class="hint">Clique na esfera ou pressione Ctrl+Espaço para falar</div>
+  </section>
+
+  <aside class="panel">
+    <header>
+      <h1>Conversa</h1>
+      <select id="voiceSelect" title="Voz do assistente"></select>
+      <button class="icon-btn" id="voiceToggle" title="Ligar/desligar voz">🔊</button>
+      <button class="icon-btn" id="securityBtn" title="Verificar a segurança do PC agora">Segurança</button>
+      <button class="icon-btn" id="resetBtn" title="Começar nova conversa">Nova</button>
+    </header>
+    <div class="log" id="log"></div>
+    <form class="composer" id="composer">
+      <button type="button" class="round" id="micBtn" title="Falar (Ctrl+Espaço)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+      <textarea id="input" rows="1" placeholder="Escreva uma mensagem…"></textarea>
+      <button type="submit" class="round primary" id="sendBtn" title="Enviar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+  </aside>
+</div>
+
+<script>
+(() => {
+  // ================= utilidades =================
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log'), input = $('input'), micBtn = $('micBtn'), sendBtn = $('sendBtn');
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('assistente.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('assistente.' + k, JSON.stringify(v)); } catch {} },
+  };
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function md(src) {
+    return src.split('```').map((part, i) => {
+      if (i % 2) return `<pre><code>${esc(part.replace(/^[\w+.-]*\n/, ''))}</code></pre>`;
+      return esc(part)
+        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/^#{1,4} (.*)$/gm, '<strong>$1</strong>')
+        .replace(/^\s*[-*] (.*)$/gm, '• $1')
+        .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+        .replace(/\n/g, '<br>');
+    }).join('');
+  }
+
+  // ================= estado geral =================
+  let busy = false, listening = false, speakQueue = 0, abortCtl = null;
+  const STATES = {
+    idle:      { hue: 196, label: 'Em espera' },
+    listening: { hue: 152, label: 'Ouvindo…' },
+    thinking:  { hue: 268, label: 'Pensando…' },
+    speaking:  { hue: 188, label: 'Falando' },
+  };
+  let state = 'idle';
+
+  // Nome, voz e cores vêm do config.json (via /api/config).
+  let CONFIG = {
+    nome: 'Assistente',
+    piperOk: false,
+    voz: {
+      motor: 'navegador',
+      piper: { grave: 1, lentidao: 1, metalico: 0, eco: 0, distorcao: 0 },
+      navegador: { preferir: '', tom: 1, velocidade: 1.05 },
+    },
+    cores: { espera: 196, ouvindo: 152, pensando: 268, falando: 188 },
+  };
+  function applyConfig(cfg = {}) {
+    const v = cfg.voz || {};
+    CONFIG = {
+      ...CONFIG, ...cfg,
+      voz: {
+        ...CONFIG.voz, ...v,
+        piper: { ...CONFIG.voz.piper, ...(v.piper || {}) },
+        navegador: { ...CONFIG.voz.navegador, ...(v.navegador || {}) },
+      },
+      cores: { ...CONFIG.cores, ...(cfg.cores || {}) },
+    };
+    FX = null; // recria os efeitos com os valores novos
+    voiceSelect.hidden = usePiper();
+    STATES.idle.hue = CONFIG.cores.espera;
+    STATES.listening.hue = CONFIG.cores.ouvindo;
+    STATES.thinking.hue = CONFIG.cores.pensando;
+    STATES.speaking.hue = CONFIG.cores.falando;
+    hue = STATES.idle.hue;
+    document.title = CONFIG.nome;
+    $('brand').textContent = CONFIG.nome.toUpperCase();
+    document.documentElement.style.setProperty('--accent', `hsl(${CONFIG.cores.espera} 90% 62%)`);
+    input.placeholder = `Fale com ${CONFIG.nome}…`;
+    loadVoices();
+    refreshState();
+  }
+
+  function refreshState() {
+    state = listening ? 'listening' : speakQueue > 0 ? 'speaking' : busy ? 'thinking' : 'idle';
+    $('stateLabel').textContent = STATES[state].label;
+    $('stateLabel').style.color = `hsl(${STATES[state].hue} 70% 65%)`;
+    sendBtn.className = 'round ' + (busy ? 'stop' : 'primary');
+    sendBtn.title = busy ? 'Parar' : 'Enviar';
+    sendBtn.innerHTML = busy
+      ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+  }
+
+  // ================= esfera =================
+  const cv = $('orb'), ctx = cv.getContext('2d');
+  let W = 0, H = 0, level = 0, hue = STATES.idle.hue, speechEnv = 0, t = 0;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = cv.getBoundingClientRect();
+    W = r.width; H = r.height;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+
+  function targetLevel() {
+    switch (state) {
+      case 'listening': return micLevel();
+      case 'speaking': {
+        if (currentSrc && FX) return ttsLevel(); // nível real do áudio do Piper
+        speechEnv *= 0.9;
+        // ritmo silábico sintético + picos a cada palavra (onboundary)
+        const syllable = 0.22 + 0.38 * Math.abs(Math.sin(t * 10.5)) * Math.abs(Math.sin(t * 3.3 + 1));
+        return Math.max(speechEnv, syllable);
+      }
+      case 'thinking': return 0.16 + 0.07 * Math.sin(t * 3);
+      default: return 0.05 + 0.03 * Math.sin(t * 1.3);
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const cx = W / 2, cy = H / 2, base = Math.min(W, H) * 0.2;
+
+    const glow = ctx.createRadialGradient(cx, cy, base * 0.3, cx, cy, base * (2.4 + level));
+    glow.addColorStop(0, `hsla(${hue},100%,60%,${0.22 + level * 0.35})`);
+    glow.addColorStop(1, 'hsla(0,0%,0%,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+
+    const speed = 1 + level * 2.5;
+    for (let layer = 3; layer >= 0; layer--) {
+      ctx.beginPath();
+      const N = 120;
+      for (let i = 0; i <= N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        const n = Math.sin(a * 3 + t * 1.1 * speed + layer) * 0.5
+                + Math.sin(a * 5 - t * 1.6 * speed + layer * 2) * 0.3
+                + Math.sin(a * 8 + t * 2.4 * speed - layer) * 0.2;
+        const r = base * (1 + layer * 0.09) * (1 + n * (0.035 + level * 0.32));
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+      if (layer === 0) {
+        const fill = ctx.createRadialGradient(cx - base * 0.35, cy - base * 0.35, base * 0.05, cx, cy, base * 1.25);
+        fill.addColorStop(0, `hsla(${hue},100%,88%,0.95)`);
+        fill.addColorStop(0.45, `hsla(${hue},95%,52%,0.9)`);
+        fill.addColorStop(1, `hsla(${hue + 35},90%,22%,0.95)`);
+        ctx.fillStyle = fill;
+        ctx.shadowColor = `hsl(${hue},100%,60%)`;
+        ctx.shadowBlur = 30 + level * 90;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else {
+        ctx.strokeStyle = `hsla(${hue + layer * 18},100%,70%,${Math.max(0.05, 0.34 - layer * 0.08 + level * 0.35)})`;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+    }
+
+    if (state === 'thinking') {
+      for (let k = 0; k < 3; k++) {
+        const a = t * 2.2 + k * (Math.PI * 2 / 3);
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * base * 1.55, cy + Math.sin(a) * base * 1.55, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${hue},100%,78%,0.9)`;
+        ctx.fill();
+      }
+    }
+  }
+
+  function frame(now) {
+    t = now / 1000;
+    const target = targetLevel();
+    level += (target - level) * 0.2;
+    hue += (STATES[state].hue - hue) * 0.05;
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ================= microfone (nível de áudio real) =================
+  let analyser = null, micData = null, micStream = null, audioCtx = null;
+  async function startMicMeter() {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = audioCtx || new AudioContext();
+      const src = audioCtx.createMediaStreamSource(micStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      src.connect(analyser);
+      micData = new Uint8Array(analyser.fftSize);
+    } catch { analyser = null; }
+  }
+  function stopMicMeter() {
+    micStream?.getTracks().forEach((tr) => tr.stop());
+    micStream = null; analyser = null;
+  }
+  function micLevel() {
+    if (!analyser) return 0.18 + 0.08 * Math.sin(t * 6);
+    analyser.getByteTimeDomainData(micData);
+    let sum = 0;
+    for (const v of micData) { const x = (v - 128) / 128; sum += x * x; }
+    return Math.min(1, Math.sqrt(sum / micData.length) * 5);
+  }
+
+  // ================= reconhecimento de voz =================
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  function toggleMic() {
+    if (!SR) return addSystem('Este navegador não reconhece voz. Abra no Edge ou no Chrome.', true);
+    if (listening) { rec.stop(); return; }
+    if (busy) return;
+    speechSynthesis.cancel(); speakQueue = 0;
+    rec = new SR();
+    rec.lang = 'pt-BR';
+    rec.interimResults = true;
+    rec.continuous = false;
+    let finalText = '';
+    rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      input.value = finalText + interim;
+    };
+    rec.onerror = (e) => {
+      if (e.error === 'not-allowed') addSystem('Permita o uso do microfone para falar comigo.', true);
+      else if (e.error !== 'no-speech' && e.error !== 'aborted') addSystem('Erro no reconhecimento de voz: ' + e.error, true);
+    };
+    rec.onend = () => {
+      listening = false;
+      micBtn.classList.remove('on');
+      stopMicMeter();
+      refreshState();
+      if (finalText.trim()) send(finalText.trim());
+    };
+    rec.start();
+    listening = true;
+    micBtn.classList.add('on');
+    startMicMeter();
+    refreshState();
+  }
+
+  // ================= voz do assistente =================
+  let voiceOn = store.get('voiceOn', true);
+  let voices = [];
+  const voiceSelect = $('voiceSelect');
+  function loadVoices() {
+    voices = speechSynthesis.getVoices().filter((v) => /^pt/i.test(v.lang));
+    voices.sort((a, b) => score(b) - score(a));
+    const saved = store.get('voice', '');
+    voiceSelect.innerHTML = voices.length
+      ? voices.map((v) => `<option value="${esc(v.name)}">${esc(v.name.replace(/^Microsoft /, '').replace(/ - .*$/, ''))}</option>`).join('')
+      : '<option>Sem voz pt-BR</option>';
+    const pref = (CONFIG.voz.navegador.preferir || '').toLowerCase();
+    const preferred = pref && voices.find((v) => v.name.toLowerCase().includes(pref));
+    if (voices.some((v) => v.name === saved)) voiceSelect.value = saved;
+    else if (preferred) voiceSelect.value = preferred.name;
+  }
+  function score(v) { return (/natural|online/i.test(v.name) ? 4 : 0) + (/pt-BR/i.test(v.lang) ? 2 : 0) + (/antonio|francisca|thalita/i.test(v.name) ? 1 : 0); }
+  speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+  voiceSelect.onchange = () => store.set('voice', voiceSelect.value);
+  function setVoiceBtn() { $('voiceToggle').textContent = voiceOn ? '🔊' : '🔇'; $('voiceToggle').classList.toggle('off', !voiceOn); }
+  $('voiceToggle').onclick = () => { voiceOn = !voiceOn; store.set('voiceOn', voiceOn); if (!voiceOn) stopSpeaking(); setVoiceBtn(); };
+  setVoiceBtn();
+
+  function toSpeech(s) {
+    return s
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/`[^`]*`/g, (m) => (m.length > 30 ? '' : m.slice(1, -1)))
+      .replace(/[*_#>|`~]/g, ' ')
+      .replace(/^\s*[-•]\s+/gm, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function speak(raw) {
+    const text = toSpeech(raw);
+    if (!voiceOn || !/[\p{L}\p{N}]/u.test(text)) return;
+    if (usePiper()) speakPiper(text); else speakBrowser(text);
+  }
+
+  // --- voz do navegador (reserva) ---
+  function speakBrowser(text) {
+    const cfg = CONFIG.voz.navegador;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'pt-BR';
+    u.rate = cfg.velocidade;
+    u.pitch = cfg.tom;
+    const v = voices.find((x) => x.name === voiceSelect.value) || voices[0];
+    if (v) u.voice = v;
+    u.onstart = () => { speechEnv = 0.9; refreshState(); };
+    u.onboundary = () => { speechEnv = 0.55 + Math.random() * 0.45; };
+    u.onend = u.onerror = () => { speakQueue = Math.max(0, speakQueue - 1); refreshState(); };
+    speakQueue++;
+    speechSynthesis.speak(u);
+    refreshState();
+  }
+
+  // --- voz Piper + efeitos de robô (Web Audio) ---
+  let FX = null, currentSrc = null, playChain = Promise.resolve(), speechGen = 0, piperBroken = false;
+  function usePiper() { return CONFIG.voz.motor === 'piper' && CONFIG.piperOk && !piperBroken; }
+
+  function distortionCurve(amount) {
+    const k = amount * 60, n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = (i * 2) / n - 1; curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x)); }
+    return curve;
+  }
+  // Cadeia: distorção leve -> (seco + modulação em anel + ressonância metálica) -> eco -> compressor -> analisador
+  function fx() {
+    if (FX) return FX;
+    audioCtx = audioCtx || new AudioContext();
+    const ctx = audioCtx, P = CONFIG.voz.piper;
+    const input = ctx.createGain();
+    const highpass = ctx.createBiquadFilter(); highpass.type = 'highpass'; highpass.frequency.value = 80;
+    const shaper = ctx.createWaveShaper(); shaper.curve = distortionCurve(P.distorcao); shaper.oversample = '4x';
+    input.connect(highpass); highpass.connect(shaper);
+
+    const sum = ctx.createGain();
+    const dry = ctx.createGain(); dry.gain.value = 1 - P.metalico * 0.4;
+    shaper.connect(dry); dry.connect(sum);
+
+    const ring = ctx.createGain(); ring.gain.value = 0;               // voz x oscilador = timbre robótico
+    const osc = ctx.createOscillator(); osc.frequency.value = 45; osc.connect(ring.gain); osc.start();
+    const ringMix = ctx.createGain(); ringMix.gain.value = P.metalico * 0.6;
+    shaper.connect(ring); ring.connect(ringMix); ringMix.connect(sum);
+
+    const comb = ctx.createDelay(0.05); comb.delayTime.value = 0.0065; // ressonância metálica curta
+    const combFb = ctx.createGain(); combFb.gain.value = 0.6;
+    const combMix = ctx.createGain(); combMix.gain.value = P.metalico * 0.5;
+    shaper.connect(comb); comb.connect(combFb); combFb.connect(comb); comb.connect(combMix); combMix.connect(sum);
+
+    const echo = ctx.createDelay(1); echo.delayTime.value = 0.14;
+    const echoLp = ctx.createBiquadFilter(); echoLp.type = 'lowpass'; echoLp.frequency.value = 2500;
+    const echoFb = ctx.createGain(); echoFb.gain.value = 0.28;
+    const echoMix = ctx.createGain(); echoMix.gain.value = P.eco;
+    sum.connect(echo); echo.connect(echoLp); echoLp.connect(echoFb); echoFb.connect(echo); echoLp.connect(echoMix);
+
+    const master = ctx.createGain(); master.gain.value = 0.9;
+    sum.connect(master); echoMix.connect(master);
+    const comp = ctx.createDynamicsCompressor();
+    const analyserNode = ctx.createAnalyser(); analyserNode.fftSize = 1024;
+    master.connect(comp); comp.connect(analyserNode); analyserNode.connect(ctx.destination);
+
+    FX = { ctx, input, analyser: analyserNode, data: new Uint8Array(analyserNode.fftSize) };
+    return FX;
+  }
+  function ttsLevel() {
+    FX.analyser.getByteTimeDomainData(FX.data);
+    let sum = 0;
+    for (const v of FX.data) { const x = (v - 128) / 128; sum += x * x; }
+    return Math.min(1, Math.sqrt(sum / FX.data.length) * 4.5);
+  }
+  function playBuffer(buf) {
+    return new Promise((resolve) => {
+      const f = fx();
+      const src = f.ctx.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = CONFIG.voz.piper.grave; // < 1 deixa a voz mais grave
+      src.connect(f.input);
+      src.onended = () => { if (currentSrc === src) currentSrc = null; resolve(); };
+      currentSrc = src;
+      refreshState();
+      src.start();
+    });
+  }
+  function speakPiper(text) {
+    const gen = speechGen;
+    speakQueue++;
+    refreshState();
+    // Pede o áudio já (em paralelo), mas toca na ordem das frases.
+    const audio = fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+      .then((r) => { if (!r.ok) throw new Error('tts ' + r.status); return r.arrayBuffer(); })
+      .then((b) => fx().ctx.decodeAudioData(b));
+    playChain = playChain
+      .then(() => audio)
+      .then((buf) => (gen === speechGen ? playBuffer(buf) : null))
+      .catch(() => {
+        if (gen !== speechGen) return;
+        if (!piperBroken) addSystem('A voz Piper falhou; usando a voz do navegador.', true);
+        piperBroken = true;
+        speakBrowser(text);
+      })
+      .finally(() => { speakQueue = Math.max(0, speakQueue - 1); refreshState(); });
+  }
+
+  function stopSpeaking() {
+    speechGen++;
+    speechSynthesis.cancel();
+    if (currentSrc) { try { currentSrc.stop(); } catch {} currentSrc = null; }
+    speakQueue = 0;
+    refreshState();
+  }
+
+  // Fala em frases enquanto o texto chega (menos espera), pulando blocos de código.
+  let pendingSpeech = '', inCode = false;
+  function speakChunk(s) {
+    const parts = s.split('```');
+    parts.forEach((p, i) => {
+      if (i > 0) { inCode = !inCode; if (inCode) speak('Deixei o código no chat.'); }
+      if (!inCode) speak(p);
+    });
+  }
+  function feedSpeech(delta) {
+    pendingSpeech += delta;
+    let m;
+    while ((m = pendingSpeech.match(/^[\s\S]*?(?:[.!?…:;](?=\s)|\n)/))) {
+      pendingSpeech = pendingSpeech.slice(m[0].length);
+      speakChunk(m[0]);
+    }
+  }
+  function flushSpeech() { if (pendingSpeech.trim()) speakChunk(pendingSpeech); pendingSpeech = ''; inCode = false; }
+
+  // ================= chat =================
+  const TOOL_LABELS = {
+    Read: 'Lendo', Glob: 'Procurando arquivos', Grep: 'Buscando', Bash: 'Executando', PowerShell: 'Executando',
+    WebSearch: 'Pesquisando', WebFetch: 'Abrindo página', Edit: 'Editando', Write: 'Criando arquivo',
+    Agent: 'Delegando', Task: 'Delegando', TodoWrite: 'Planejando',
+  };
+  function toolLabel(name) {
+    if (TOOL_LABELS[name]) return TOOL_LABELS[name];
+    const m = /^mcp__(?:claude_ai_)?([^_]+(?:_[^_]+)*?)__(.+)$/.exec(name);
+    return m ? `${m[1].replace(/_/g, ' ')}: ${m[2].replace(/_/g, ' ')}` : name;
+  }
+
+  function scrollDown() { logEl.scrollTop = logEl.scrollHeight; }
+  function saveLog() { store.set('log', logEl.innerHTML.slice(-200000)); }
+  function addMsg(kind, text) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + kind;
+    if (kind === 'bot') el.innerHTML = '<div class="tools"></div><div class="text"></div>';
+    else el.textContent = text;
+    logEl.appendChild(el);
+    scrollDown();
+    return el;
+  }
+  function addSystem(text, isError) {
+    const el = addMsg('system', text);
+    if (isError) el.classList.add('error');
+    saveLog();
+  }
+
+  async function send(text) {
+    text = (text || '').trim();
+    if (busy || !text) return;
+    stopSpeaking();
+    if (usePiper()) fx().ctx.resume(); // o navegador só libera áudio após interação do usuário
+    addMsg('user', text);
+    input.value = ''; autosize();
+    busy = true; refreshState();
+
+    const bubble = addMsg('bot');
+    bubble.classList.add('pending');
+    const textEl = bubble.querySelector('.text'), toolsEl = bubble.querySelector('.tools');
+    let raw = '';
+    pendingSpeech = ''; inCode = false;
+    abortCtl = new AbortController();
+
+    const handle = (ev, d) => {
+      if (ev === 'delta') {
+        bubble.classList.remove('pending');
+        raw += d.text;
+        textEl.innerHTML = md(raw);
+        feedSpeech(d.text);
+        scrollDown();
+      } else if (ev === 'turn') {
+        if (raw && !raw.endsWith('\n')) { raw += '\n\n'; feedSpeech('\n'); }
+      } else if (ev === 'tool') {
+        bubble.classList.remove('pending');
+        const chip = document.createElement('span');
+        chip.className = 'tool';
+        chip.innerHTML = `<b>${esc(toolLabel(d.name))}</b> ${esc(d.detail || '')}`;
+        chip.title = d.detail || '';
+        toolsEl.appendChild(chip);
+        scrollDown();
+      } else if (ev === 'done') {
+        if (d.error) addSystem(d.error, true);
+        if (d.denials && d.denials.length) {
+          addSystem(`Precisei de permissão para: ${d.denials.map(toolLabel).join(', ')}. Por segurança, isso só pode ser liberado no terminal do Claude Code.`);
+        }
+      }
+    };
+
+    try {
+      const r = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+        signal: abortCtl.signal,
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || r.statusText); }
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          const ev = /^event: (.*)$/m.exec(block)?.[1];
+          const data = /^data: (.*)$/m.exec(block)?.[1];
+          if (ev && data) handle(ev, JSON.parse(data));
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') addSystem('Resposta interrompida.');
+      else addSystem('Não consegui falar com o servidor: ' + e.message, true);
+    } finally {
+      busy = false; abortCtl = null;
+      flushSpeech();
+      if (bubble.classList.contains('pending')) bubble.remove();
+      refreshState();
+      saveLog();
+    }
+  }
+
+  // ================= eventos =================
+  function autosize() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 140) + 'px'; }
+  input.addEventListener('input', autosize);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input.value); }
+  });
+  $('composer').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (busy) { abortCtl?.abort(); stopSpeaking(); } else send(input.value);
+  });
+  micBtn.onclick = toggleMic;
+  cv.onclick = () => { if (speakQueue > 0) stopSpeaking(); else toggleMic(); };
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); toggleMic(); }
+    if (e.key === 'Escape') stopSpeaking();
+  });
+  $('securityBtn').onclick = async () => {
+    if (busy) return;
+    const btn = $('securityBtn');
+    btn.disabled = true; btn.textContent = 'Verificando…';
+    try {
+      const r = await fetch('/api/security', { method: 'POST' });
+      if (!r.ok) throw new Error((await r.json()).error);
+      send('Acabei de atualizar o relatório de segurança. Me dê um resumo do que precisa de atenção.');
+    } catch (e) { addSystem('Não consegui rodar a verificação: ' + e.message, true); }
+    finally { btn.disabled = false; btn.textContent = 'Segurança'; }
+  };
+  $('resetBtn').onclick = async () => {
+    if (busy) return;
+    stopSpeaking();
+    try {
+      const r = await fetch('/api/reset', { method: 'POST' });
+      if (!r.ok) throw new Error((await r.json()).error);
+      logEl.innerHTML = '';
+      addSystem('Nova conversa iniciada.');
+    } catch (e) { addSystem('Não consegui reiniciar: ' + e.message, true); }
+  };
+
+  // ================= início =================
+  resize();
+  refreshState();
+  requestAnimationFrame(frame);
+  fetch('/api/config')
+    .then((r) => r.json())
+    .then(applyConfig)
+    .catch(() => applyConfig())
+    .finally(() => {
+      const saved = store.get('log', '');
+      if (saved) { logEl.innerHTML = saved; scrollDown(); }
+      else addSystem(`Olá, sou ${CONFIG.nome}. Digite ou clique na esfera para falar comigo.`);
+    });
+})();
+</script>
+</body>
+</html>

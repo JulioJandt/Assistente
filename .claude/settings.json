@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebSearch"
+    ],
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.claude/**)",
+      "Read(~/AppData/Local/Google/Chrome/**)",
+      "Read(~/AppData/Local/Microsoft/Edge/**)",
+      "Read(~/AppData/Roaming/Mozilla/**)"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+﻿data/
+tools/
+
+# Dependencias e ambientes
+node_modules/
+venv/
+.venv/
+__pycache__/
+
+# Segredos e configs locais
+.env
+.env.*
+.claude/settings.local.json
+
+# Logs e lixo do sistema
+*.log
+Thumbs.db
+desktop.ini
