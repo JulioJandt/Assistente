@@ -19,7 +19,17 @@ const CONFIG_FILE = path.join(ROOT, 'config.json');
 const DATA_DIR = path.join(ROOT, 'data');
 const SESSION_FILE = path.join(DATA_DIR, 'session.json');
 const LOG_FILE = path.join(DATA_DIR, 'actions.log');
-const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+// Acha o Claude Code mesmo quando a pasta dele nao esta no PATH (ex.: ao abrir pelo .bat).
+function findClaude() {
+  if (process.env.CLAUDE_BIN) return process.env.CLAUDE_BIN;
+  const home = process.env.USERPROFILE || process.env.HOME || '';
+  const candidates = [
+    path.join(home, '.local', 'bin', 'claude.exe'),
+    path.join(process.env.APPDATA || '', 'npm', 'claude.cmd'),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) || 'claude';
+}
+const CLAUDE_BIN = findClaude();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -155,15 +165,51 @@ function handleTts(req, res) {
   });
 }
 
+// ---------- acesso pelo celular (Tailscale) ----------
+// O servidor continua ouvindo so em 127.0.0.1. O "tailscale serve" recebe o acesso
+// em https://<pc>.<rede>.ts.net (visivel apenas para os aparelhos da sua rede Tailscale)
+// e repassa para ca. O Tailscale informa em cada pedido quem e o usuario
+// (cabecalho Tailscale-User-Login); so o dono deste PC e aceito.
+const TAILSCALE_BIN = process.env.TAILSCALE_BIN || [
+  path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Tailscale', 'tailscale.exe'),
+].find((p) => fs.existsSync(p)) || 'tailscale';
+let remote; // { host, login } quando o Tailscale esta conectado; null quando nao
+
+function detectTailscale() {
+  return new Promise((resolve) => {
+    let out = '';
+    let ps;
+    try { ps = spawn(TAILSCALE_BIN, ['status', '--json'], { windowsHide: true }); } catch { return resolve(null); }
+    ps.stdout.setEncoding('utf8');
+    ps.stdout.on('data', (d) => { out += d; });
+    ps.on('error', () => resolve(null));
+    ps.on('close', () => {
+      try {
+        const st = JSON.parse(out);
+        const host = String(st.Self?.DNSName || '').replace(/\.$/, '').toLowerCase();
+        const login = st.User?.[st.Self?.UserID]?.LoginName;
+        resolve(host && login && st.BackendState === 'Running' ? { host, login } : null);
+      } catch { resolve(null); }
+    });
+  });
+}
+
 // ---------- seguranca do servidor ----------
 // Recusa pedidos de outros sites abertos no navegador (CSRF) e DNS rebinding:
-// so aceita Host local e, em requisicoes que nao sao GET, Origin da propria interface.
+// so aceita Host local (ou o endereco Tailscale do PC) e, em requisicoes que nao sao GET,
+// Origin da propria interface.
 const LOCAL_HOSTS = new Set([`${HOST}:${PORT}`, `localhost:${PORT}`]);
 const LOCAL_ORIGINS = new Set([`http://${HOST}:${PORT}`, `http://localhost:${PORT}`]);
 function isTrusted(req) {
-  if (!LOCAL_HOSTS.has(req.headers.host)) return false;
-  if (req.method !== 'GET' && !LOCAL_ORIGINS.has(req.headers.origin)) return false;
-  return true;
+  const host = String(req.headers.host || '').toLowerCase();
+  if (LOCAL_HOSTS.has(host)) {
+    return req.method === 'GET' || LOCAL_ORIGINS.has(req.headers.origin);
+  }
+  if (remote && host === remote.host) {
+    if (req.headers['tailscale-user-login'] !== remote.login) return false;
+    return req.method === 'GET' || req.headers.origin === `https://${remote.host}`;
+  }
+  return false;
 }
 
 function sendJson(res, status, obj) {
@@ -285,6 +331,19 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     return fs.createReadStream(path.join(ROOT, 'public', 'index.html')).pipe(res);
   }
+  if (req.method === 'GET' && url === '/manifest.webmanifest') {
+    const { nome } = loadConfig();
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({
+      name: nome, short_name: nome, start_url: '/', scope: '/', display: 'standalone',
+      background_color: '#04070c', theme_color: '#04070c', lang: 'pt-BR',
+      icons: [{ src: '/icon.png', sizes: '512x512', type: 'image/png', purpose: 'any' }],
+    }));
+  }
+  if (req.method === 'GET' && (url === '/icon.png' || url === '/apple-touch-icon.png')) {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=86400' });
+    return fs.createReadStream(path.join(ROOT, 'public', 'icon.png')).pipe(res);
+  }
   if (req.method === 'GET' && url === '/api/config') {
     const cfg = loadConfig();
     const { nome, voz, cores } = cfg;
@@ -315,6 +374,13 @@ server.listen(PORT, HOST, () => {
   }
   runSecurityCheck();
   setInterval(() => runSecurityCheck(), SECURITY_INTERVAL_MS);
+  const refreshRemote = () => detectTailscale().then((r) => {
+    const changed = JSON.stringify(r) !== JSON.stringify(remote);
+    remote = r;
+    if (changed) console.log(r ? `Celular: https://${r.host}  (somente ${r.login})` : 'Acesso pelo celular desligado (Tailscale nao conectado).');
+  });
+  refreshRemote();
+  setInterval(refreshRemote, 60 * 1000); // acompanha se o Tailscale ligar/desligar
   if (process.argv.includes('--open')) {
     // Abre no Edge em modo app (janela propria, sem barra de endereco); o Edge tem vozes naturais em pt-BR.
     spawn('cmd', ['/c', 'start', '', 'msedge', `--app=${URL}`], { detached: true, stdio: 'ignore', windowsHide: true }).unref();

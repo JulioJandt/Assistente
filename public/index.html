@@ -2,7 +2,15 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#04070c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Assistente">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon.png">
 <title>Assistente</title>
 <style>
   :root {
@@ -93,11 +101,22 @@
   .round.stop { background: var(--danger); color: #1a0505; border: none; }
   .round svg { width: 18px; height: 18px; }
 
+  @supports (height: 100dvh) { .app { height: 100dvh; } }
+
+  /* ---------- celular ---------- */
   @media (max-width: 860px) {
-    body { overflow: auto; }
-    .app { grid-template-columns: 1fr; grid-template-rows: 42vh 1fr; }
-    .panel { border-left: none; border-top: 1px solid var(--line); min-height: 58vh; }
-    .state { bottom: 18px; } .hint { display: none; }
+    .app { grid-template-columns: 1fr; grid-template-rows: minmax(150px, 34%) minmax(0, 1fr); }
+    .panel { border-left: none; border-top: 1px solid var(--line); }
+    .brand { top: calc(14px + env(safe-area-inset-top)); left: 18px; }
+    .state { bottom: 12px; } .hint { display: none; }
+    .stage { padding-top: env(safe-area-inset-top); }
+    .panel header { padding: 10px 12px; flex-wrap: wrap; }
+    .icon-btn, select { height: 36px; }
+    .log { padding: 14px 12px; -webkit-overflow-scrolling: touch; }
+    .composer { padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); }
+    .composer textarea { font-size: 16px; } /* abaixo de 16px o iPhone dá zoom ao digitar */
+    .round { width: 46px; height: 46px; }
+    button, select, canvas { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   }
 </style>
 </head>
@@ -155,6 +174,20 @@
     }).join('');
   }
 
+  // iPhone/iPad (o iPad recente se apresenta como Mac com tela de toque)
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+  // O Safari só libera som depois de um toque do usuário: destrava o áudio no primeiro toque.
+  function unlockAudio() {
+    try {
+      audioCtx = audioCtx || new AudioContext();
+      if (audioCtx.state !== 'running') audioCtx.resume();
+      const b = audioCtx.createBuffer(1, 1, 22050), s = audioCtx.createBufferSource();
+      s.buffer = b; s.connect(audioCtx.destination); s.start(0); // som mudo para "acordar" o áudio
+    } catch {}
+  }
+  ['touchend', 'click', 'keydown'].forEach((ev) => document.addEventListener(ev, unlockAudio, { capture: true }));
+
   // ================= estado geral =================
   let busy = false, listening = false, speakQueue = 0, abortCtl = null;
   const STATES = {
@@ -195,6 +228,7 @@
     STATES.speaking.hue = CONFIG.cores.falando;
     hue = STATES.idle.hue;
     document.title = CONFIG.nome;
+    document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', CONFIG.nome);
     $('brand').textContent = CONFIG.nome.toUpperCase();
     document.documentElement.style.setProperty('--accent', `hsl(${CONFIG.cores.espera} 90% 62%)`);
     input.placeholder = `Fale com ${CONFIG.nome}…`;
@@ -304,6 +338,9 @@
   // ================= microfone (nível de áudio real) =================
   let analyser = null, micData = null, micStream = null, audioCtx = null;
   async function startMicMeter() {
+    // No iPhone, abrir o microfone em paralelo atrapalha o reconhecimento de voz
+    // e manda o som para o alto-falante de ligação; a esfera usa a animação simulada.
+    if (IOS) return;
     try {
       micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = audioCtx || new AudioContext();
@@ -330,7 +367,9 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null;
   function toggleMic() {
-    if (!SR) return addSystem('Este navegador não reconhece voz. Abra no Edge ou no Chrome.', true);
+    if (!SR) return addSystem(IOS
+      ? 'O reconhecimento de voz não está disponível aqui. Toque na caixa de texto e use o microfone do teclado do iPhone.'
+      : 'Este navegador não reconhece voz. Abra no Edge ou no Chrome.', true);
     if (listening) { rec.stop(); return; }
     if (busy) return;
     speechSynthesis.cancel(); speakQueue = 0;
@@ -348,7 +387,9 @@
       input.value = finalText + interim;
     };
     rec.onerror = (e) => {
-      if (e.error === 'not-allowed') addSystem('Permita o uso do microfone para falar comigo.', true);
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') addSystem(IOS
+        ? 'Permita o microfone e o Reconhecimento de Fala em Ajustes > Safari (ou use o microfone do teclado).'
+        : 'Permita o uso do microfone para falar comigo.', true);
       else if (e.error !== 'no-speech' && e.error !== 'aborted') addSystem('Erro no reconhecimento de voz: ' + e.error, true);
     };
     rec.onend = () => {
